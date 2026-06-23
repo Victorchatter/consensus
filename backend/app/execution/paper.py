@@ -58,12 +58,28 @@ class PaperAccount:
 class PaperTradingEngine:
     """Simulates fills against live market prices."""
 
-    def __init__(self, initial_balance: float = 100_000.0):
+    def __init__(self, initial_balance: float = 100_000.0, on_close=None):
         self.account = PaperAccount(balance=initial_balance)
         self._commission_pct = 0.001
         self._slippage_pct = 0.0005
         self._max_daily_loss_pct = settings.max_daily_loss_pct
         self._max_position_size_pct = settings.max_position_size_pct
+        self._on_close = on_close
+
+    def _emit_close(self, pos, fill_price, size, pnl, commission):
+        if self._on_close is None:
+            return
+        self._on_close({
+            "asset_id": pos.asset_id,
+            "symbol": pos.symbol,
+            "direction": pos.direction,
+            "entry_price": pos.avg_entry_price,
+            "exit_price": fill_price,
+            "size": size,
+            "pnl": pnl,
+            "commission": commission,
+            "exit_time": dt.datetime.utcnow(),
+        })
 
     def place_order(self, asset_id: int, symbol: str, action: str, size: float, order_type: str = "market", price: Optional[float] = None) -> PaperOrder:
         """Place a paper order. Market orders fill immediately at last price."""
@@ -143,6 +159,7 @@ class PaperTradingEngine:
                         self.account.win_count += 1
                     else:
                         self.account.loss_count += 1
+                    self._emit_close(pos, fill_price, pos.size, pnl, commission)
                     del self.account.positions[order.asset_id]
                 else:
                     pnl = (pos.avg_entry_price - fill_price) * order.size - commission
@@ -174,6 +191,7 @@ class PaperTradingEngine:
                         self.account.win_count += 1
                     else:
                         self.account.loss_count += 1
+                    self._emit_close(pos, fill_price, sell_size, pnl, commission)
                     del self.account.positions[order.asset_id]
             else:
                 # Opening/increasing short
