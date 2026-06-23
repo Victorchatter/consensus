@@ -11,6 +11,7 @@ from app.exchange import get_connector
 from app.strategies import Strategy, Bar
 from app.data.feeders import get_feeder_for_source, OHLCVBar
 from app import models
+from app.execution.guard import RiskGuard
 from sqlalchemy.orm import Session
 
 
@@ -49,6 +50,46 @@ class TradingBot:
         self._task: Optional[asyncio.Task] = None
         self._last_bar: Dict[int, OHLCVBar] = {}
         self._live_confirmed: bool = False  # Safety guard: user must confirm first live run
+        self._guard = RiskGuard(
+            max_daily_loss_pct=self.config.risk_max_daily_loss_pct / 100.0,
+            max_position_pct=self.config.risk_max_position_size_pct / 100.0,
+        )
+
+    def _log_consensus_signal(self, session: Session, asset_id: int, signal):
+        md = signal.metadata or {}
+        session.add(models.ConsensusSignal(
+            asset_id=asset_id,
+            timestamp=signal.timestamp,
+            action=signal.action,
+            price=float(signal.price),
+            score=float(md.get("score", 0.0)),
+            n_long=int(md.get("n_long", 0)),
+            n_short=int(md.get("n_short", 0)),
+            n_flat=int(md.get("n_flat", 0)),
+            votes=md.get("votes", {}),
+        ))
+        session.commit()
+
+    def _write_closed_trade(self, trade: dict):
+        from app.models import TradeDirection, TradeStatus, OrderType
+        with self._db() as session:
+            direction = TradeDirection.LONG if trade["direction"] == "long" else TradeDirection.SHORT
+            session.add(models.Trade(
+                strategy_id=self.config.strategy_id,
+                asset_id=trade["asset_id"],
+                direction=direction,
+                order_type=OrderType.MARKET,
+                entry_time=trade["exit_time"],   # exit_time is when we learn the round-trip; entry approx
+                exit_time=trade["exit_time"],
+                entry_price=trade["entry_price"],
+                exit_price=trade["exit_price"],
+                size=trade["size"],
+                pnl=trade["pnl"],
+                commission=trade["commission"],
+                status=TradeStatus.CLOSED,
+                is_paper=True,
+            ))
+            session.commit()
 
     def _init_connector(self) -> ExchangeConnector:
         """Create the appropriate exchange connector for this bot's mode."""
@@ -80,7 +121,10 @@ class TradingBot:
                 )
 
         # Default to paper
-        return get_connector("paper", paper=True, credentials={"initial_balance": self.config.initial_cash})
+        connector = get_connector("paper", paper=True, credentials={"initial_balance": self.config.initial_cash})
+        if hasattr(connector, "_engine"):
+            connector._engine._on_close = self._write_closed_trade
+        return connector
 
     async def start(self):
         if self._running:
@@ -159,11 +203,27 @@ class TradingBot:
                         signal = strat.on_bar(bar)
 
                         if signal:
+                            self._log_consensus_signal(session, asset_id, signal)
                             size = self._compute_position_size(asset_id, signal.price)
                             if size > 0:
-                                # Live mode safety check
                                 if self.config.mode == "live" and not self._live_confirmed:
                                     self._log(f"[BLOCKED] {asset.symbol} {signal.action.upper()} — live mode not confirmed")
+                                    continue
+
+                                # Strategy-independent execution guard.
+                                is_reducing = strat._position is None  # signal that closes a position
+                                acct = self._connector.get_account()
+                                equity = acct.equity if acct.equity > 0 else acct.balance
+                                ok, reason = self._guard.check(
+                                    is_reducing=is_reducing,
+                                    intended_value=size * signal.price,
+                                    equity=equity,
+                                    daily_pnl=self._connector.get_summary().get("realized_pnl", 0.0)
+                                        if hasattr(self._connector, "get_summary") else 0.0,
+                                    now=dt.datetime.utcnow(),
+                                )
+                                if not ok:
+                                    self._log(f"[GUARD] {asset.symbol} {signal.action.upper()} rejected — {reason}")
                                     continue
 
                                 order = self._connector.place_order(
