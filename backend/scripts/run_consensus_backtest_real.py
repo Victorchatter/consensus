@@ -29,12 +29,16 @@ _OUT_PATH = os.path.normpath(
     os.path.join(_BACKEND_DIR, "..", "docs", "consensus-real-backtest-report.md")
 )
 
-# (symbol, asset_class, timeframe, start, end). BTC has deep 5m history via ccxt;
-# Yahoo only serves ~the last 60 days of 5m for SPY/GLD.
+# (symbol, asset_class, timeframe, start, end). BTC has deep history via ccxt;
+# Yahoo serves ~last 60 days of 5m and ~730 days of 1h for SPY/GLD. The 5m runs
+# are dominated by fee/slippage drag (overtrading); 1h is the fairer signal test.
 _UNIVERSE = [
     ("BTC/USDT", "crypto", "5m", dt.date(2022, 1, 1), dt.date(2026, 6, 24)),
     ("SPY", "etf", "5m", dt.date(2026, 4, 28), dt.date(2026, 6, 24)),
     ("GLD", "commodity", "5m", dt.date(2026, 4, 28), dt.date(2026, 6, 24)),
+    ("BTC/USDT", "crypto", "1h", dt.date(2022, 1, 1), dt.date(2026, 6, 24)),
+    ("SPY", "etf", "1h", dt.date(2024, 6, 25), dt.date(2026, 6, 24)),
+    ("GLD", "commodity", "1h", dt.date(2024, 6, 25), dt.date(2026, 6, 24)),
 ]
 
 

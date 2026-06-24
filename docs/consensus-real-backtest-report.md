@@ -6,9 +6,9 @@ Walk-forward consensus-threshold sweep with realistic commissions and slippage a
 
 ## Summary: which timeframe wins per asset
 
-- **BTC/USDT** (crypto): **NO EDGE on any timeframe** (5m: Sharpe -0.309). Best available is 5m but Sharpe <= 0.
-- **SPY** (etf): **NO EDGE on any timeframe** (5m: Sharpe -0.228). Best available is 5m but Sharpe <= 0.
-- **GLD** (commodity): **NO EDGE on any timeframe** (5m: Sharpe -0.416). Best available is 5m but Sharpe <= 0.
+- **BTC/USDT** (crypto): **NO EDGE on any timeframe** (1h: Sharpe -0.026, 5m: Sharpe -0.309). Best available is 1h but Sharpe <= 0.
+- **SPY** (etf): **1h wins** (1h: Sharpe 0.191, 5m: Sharpe -0.228).
+- **GLD** (commodity): **1h wins** (1h: Sharpe 0.113, 5m: Sharpe -0.416).
 
 ## Per-dataset threshold sweeps
 
@@ -59,6 +59,54 @@ Walk-forward consensus-threshold sweep with realistic commissions and slippage a
 **Data quality:** 3042 bars, 18 walk-forward folds (train 300 / test 150 per fold), commission 0.030%, slippage 0.050%.
 
 **Verdict: NO EDGE.** Best threshold 0.90 for GLD @ 5m yields Sharpe -0.416 (<= 0) over 5 out-of-sample trades, net total return -0.69%. After realistic fees and slippage there is **no tradeable edge** here — do not deploy capital on this configuration.
+
+### BTC/USDT — crypto @ 1h
+
+| Threshold | Return % | Sharpe | Sortino | MaxDD % | Win % | #Trades |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.50 | -23.76 | -0.2069 | 28542678921.5834 | 4.21 | 56.7% | 534 |
+| 0.60 | -9.71 | -0.1076 | 28542678921.6095 | 3.45 | 60.2% | 384 |
+| 0.70 | -6.74 | -0.0632 | 8913866946.7297 | 3.15 | 66.1% | 233 |
+| 0.80 *(best)* | -3.23 | -0.0258 | 27667456665.1762 | 3.13 | 67.4% | 141 |
+| 0.90 | -6.12 | -0.0377 | 27667456665.1211 | 3.13 | 62.7% | 75 |
+
+**Best threshold:** 0.80
+
+**Data quality:** 39240 bars, 259 walk-forward folds (train 300 / test 150 per fold), commission 0.100%, slippage 0.050%.
+
+**Verdict: NO EDGE.** Best threshold 0.80 for BTC/USDT @ 1h yields Sharpe -0.026 (<= 0) over 141 out-of-sample trades, net total return -3.23%. After realistic fees and slippage there is **no tradeable edge** here — do not deploy capital on this configuration.
+
+### SPY — etf @ 1h
+
+| Threshold | Return % | Sharpe | Sortino | MaxDD % | Win % | #Trades |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.50 | 0.86 | 0.0462 | 0.3029 | 1.10 | 43.2% | 37 |
+| 0.60 | 1.54 | 0.0983 | 0.2992 | 1.10 | 50.0% | 28 |
+| 0.70 *(best)* | 2.18 | 0.1908 | 0.4058 | 1.09 | 47.4% | 19 |
+| 0.80 | -0.72 | -0.0712 | 0.0988 | 1.06 | 46.7% | 15 |
+| 0.90 | 0.28 | 0.0975 | 0.1567 | 1.06 | 54.5% | 11 |
+
+**Best threshold:** 0.70
+
+**Data quality:** 4032 bars, 24 walk-forward folds (train 300 / test 150 per fold), commission 0.050%, slippage 0.050%.
+
+**Verdict: MARGINAL EDGE.** Best threshold 0.70 for SPY @ 1h produces a positive out-of-sample Sharpe of 0.191 across 19 trades, net total return 2.18% after fees + slippage. This is a marginal signal on synthetic data only — it must be re-run on REAL ingested bars before any capital is risked.
+
+### GLD — commodity @ 1h
+
+| Threshold | Return % | Sharpe | Sortino | MaxDD % | Win % | #Trades |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.50 | 1.37 | 0.0910 | 0.2300 | 2.39 | 52.2% | 23 |
+| 0.60 *(best)* | 0.79 | 0.1129 | 0.2290 | 1.12 | 56.2% | 16 |
+| 0.70 | 0.43 | 0.0462 | 0.1838 | 1.11 | 55.6% | 9 |
+| 0.80 | -0.74 | -0.0267 | 0.0710 | 1.11 | 42.9% | 7 |
+| 0.90 | -1.68 | -0.1562 | -0.0733 | 1.11 | 16.7% | 6 |
+
+**Best threshold:** 0.60
+
+**Data quality:** 3476 bars, 21 walk-forward folds (train 300 / test 150 per fold), commission 0.030%, slippage 0.050%.
+
+**Verdict: MARGINAL EDGE.** Best threshold 0.60 for GLD @ 1h produces a positive out-of-sample Sharpe of 0.113 across 16 trades, net total return 0.79% after fees + slippage. This is a marginal signal on synthetic data only — it must be re-run on REAL ingested bars before any capital is risked.
 
 ## How to regenerate with REAL data
 
