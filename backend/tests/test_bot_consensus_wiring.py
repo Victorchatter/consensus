@@ -46,3 +46,23 @@ def test_daily_pnl_rebaselines_each_utc_day():
     assert b._daily_pnl(100_000, d1a) == 0.0       # first call today -> baseline set
     assert b._daily_pnl(98_000, d1b) == -2000.0    # down 2k same day
     assert b._daily_pnl(98_000, d2) == 0.0         # new UTC day -> re-baseline, no carry-over
+
+
+def test_ensure_daily_baseline_snapshots_without_signal():
+    import datetime as dt
+    b = _bot()
+
+    class _Acct:
+        equity = 50_000.0
+        balance = 50_000.0
+
+    class _Conn:
+        def get_account(self):
+            return _Acct()
+
+    b._connector = _Conn()
+    b._ensure_daily_baseline(dt.datetime(2026, 3, 1, 0, 5))
+    assert b._daily_baseline_date == dt.date(2026, 3, 1)
+    assert b._daily_baseline_equity == 50_000.0
+    # a loss that happens before the day's first signal is now measured correctly
+    assert b._daily_pnl(48_000.0, dt.datetime(2026, 3, 1, 9, 0)) == -2000.0

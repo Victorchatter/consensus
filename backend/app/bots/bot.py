@@ -105,6 +105,22 @@ class TradingBot:
         base = self._daily_baseline_equity if self._daily_baseline_equity is not None else equity
         return equity - base
 
+    def _ensure_daily_baseline(self, now: dt.datetime) -> None:
+        """Snapshot equity at the first loop tick of each UTC day so the daily-loss
+        guard measures from day-start even if no signal has fired yet."""
+        today = now.date()
+        if self._daily_baseline_date == today:
+            return
+        if self._connector is None:
+            return
+        try:
+            acct = self._connector.get_account()
+            equity = acct.equity if acct.equity > 0 else acct.balance
+        except Exception:
+            return
+        self._daily_baseline_date = today
+        self._daily_baseline_equity = equity
+
     def _init_connector(self) -> ExchangeConnector:
         """Create the appropriate exchange connector for this bot's mode."""
         if self.config.mode == "live":
@@ -177,6 +193,7 @@ class TradingBot:
         feeder = get_feeder_for_source(self.config.data_source)
         while self._running:
             try:
+                self._ensure_daily_baseline(dt.datetime.utcnow())
                 with self._db() as session:
                     for asset_id in self.config.asset_ids:
                         asset = session.query(models.Asset).get(asset_id)
@@ -225,7 +242,7 @@ class TradingBot:
                                     continue
 
                                 # Strategy-independent execution guard.
-                                is_reducing = strat._position is None  # signal that closes a position
+                                is_reducing = getattr(strat, "_position", None) is None  # closing signal
                                 acct = self._connector.get_account()
                                 equity = acct.equity if acct.equity > 0 else acct.balance
                                 ok, reason = self._guard.check(
