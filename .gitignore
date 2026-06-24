@@ -38,3 +38,9 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# Machine-specific CA bundle for TLS behind intercepting AV/proxy (Avast etc.)
+backend/win-ca-bundle.pem
+
+# SDD scratch (progress ledger, task briefs)
+.superpowers/

@@ -189,6 +189,25 @@ class Trade(Base):
     journal_entries = relationship("JournalEntry", back_populates="trade", cascade="all, delete-orphan")
 
 
+# ── CONSENSUS SIGNALS ──────────────────────────────────────────
+
+class ConsensusSignal(Base):
+    __tablename__ = "consensus_signals"
+    __table_args__ = (Index("ix_consensus_signal_asset_ts", "asset_id", "timestamp"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    action = Column(String(8), nullable=False)   # "buy" | "sell"
+    price = Column(Float, nullable=False)
+    score = Column(Float, nullable=False)
+    n_long = Column(Integer, default=0)
+    n_short = Column(Integer, default=0)
+    n_flat = Column(Integer, default=0)
+    votes = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=dt.datetime.utcnow)
+
+
 # ── DAILY P&L ───────────────────────────────────────────────────
 
 class DailyPnL(Base):
