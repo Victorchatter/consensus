@@ -156,19 +156,82 @@ CCXT config + API key setup. Confirm before wiring Phase 3 execution.
   were on.
 - Memory file: `project_consensus` (in Claude memory) tracks this across sessions.
 
+## 11. Session log — 2026-06-24 (Phase 2 shipped + real-data verdict + infra)
+
+**Everything below is committed and pushed to `main`** (github.com/Victorchatter/consensus).
+`main` HEAD ≈ `ec25fbc`. **76 tests pass:** `cd backend && ./venv/Scripts/python.exe -m pytest tests/ -q`.
+
+### What got built this session
+1. **Phase 2 paper trading — DONE** (merged to main). See §2/§7 for details:
+   `DefaultConsensusStrategy` (zero-arg, drops into the bot), `RiskGuard`
+   (`app/execution/guard.py`, strategy-independent kill-switch: latches on daily-loss,
+   auto-resets at UTC day rollover, blocks opens/allows closes, rejects oversized opens),
+   `ConsensusSignal` audit table + closed `Trade` rows via a paper-engine `on_close`
+   sink, daily-loss baseline snapshotted per UTC day. Runnable:
+   `./venv/Scripts/python.exe -m scripts.run_consensus_paper` (BTC/USDT 5m, live OFF).
+2. **Network egress fixed.** Avast Web Shield was MITM-ing HTTPS with a private root
+   OpenSSL rejects. Fix = `app/core/ssl_bootstrap.py` (imported from `app/__init__.py`,
+   runs on any `import app`): `truststore` routes OpenSSL libs (ccxt/requests) through
+   the Windows trust store; `CURL_CA_BUNDLE` points curl_cffi (yfinance) at a
+   Windows-root PEM. Rebuild the PEM with `scripts/build_ca_bundle.ps1`. The bundle
+   `backend/win-ca-bundle.pem` is **machine-specific + gitignored**. New dep: `truststore`.
+3. **Real data ingested** into SQLite (durable, see below): BTC/USDT 5m (470,865 bars,
+   2022→now) + 1h (39,240); SPY & GLD at 5m (~3k, last ~57d — Yahoo clamps 5m to 60d)
+   and 1h (~4k/3.5k, last ~730d). Gold = **GLD** (chosen over XAUUSD=X, which Yahoo
+   serves unreliably). Ingest: `python -m app.consensus.ingest --symbol ... --source binance|yahoo --timeframe ... --start ... --end ...`.
+4. **Real backtest run** (`scripts/run_consensus_backtest_real.py` → `docs/consensus-real-backtest-report.md`).
+   **VERDICT: no robust tradeable edge.** At 5m, fee/overtrading drag dominated
+   (BTC -62.99%, 1307 trades). At 1h (fairer test) BTC ≈ breakeven (-3.23%, 141 trades),
+   SPY +2.18% / GLD +0.79% but on **noise-level samples** (19/16 trades — not significant).
+   The phase gate to live **stays closed**, correctly.
+5. **DB durability infra:** SQLite **WAL mode** (bot writes while UI reads) + online
+   backup `scripts/backup_db.py` (safe while live, prunes to newest N; schedule via
+   Windows Task Scheduler — see the script header).
+
+### The database (answering "is my data kept?") — YES
+File-based SQLite at `database/echotrader.db` (**~130 MB**, gitignored, 16 tables, WAL).
+Persists across restarts by design. Holds 566k+ `price_bars`, `consensus_signals`,
+`trades`, `journal_entries`, etc. Every `commit()` writes to disk. **Gap:** no
+automatic backup yet — `backup_db.py` exists but isn't scheduled.
+
+### APPROVED but NOT YET BUILT — the self-learning loop (next session's main task)
+Design agreed with Victor (adaptive reweighting, pure-Python, nightly + every-N-trades):
+- **Goal:** make the existing `compute_weights()` (voter weight = `max(0, 2·accuracy−1)`)
+  run **live off realized trade outcomes**, so the bot leans on voters that actually
+  made money. This is the "learn from mistakes & improve" mechanism Victor wants
+  (he referenced a "Hermes agent learning structure" = accumulate I/O → refine behavior).
+- **Honest framing (keep this):** this does NOT manufacture alpha (backtest found none);
+  it adapts + avoids degradation. The anti-overfit discipline is a mandatory
+  **out-of-sample acceptance gate** — only adopt new weights if they don't worsen
+  held-out recent-trade P&L; else keep current.
+- **Plan (6 pieces):** (1) fix trade↔signal linkage — stamp each opening Trade with its
+  entry `ConsensusSignal` id + real entry time (also clears the `entry_time==exit_time`
+  debt); (2) `relearn_weights(asset)` numpy scorer off closed trades; (3) OOS acceptance
+  gate; (4) hot-swap accepted weights into the live strategy via a `voter_weights` table;
+  (5) triggers: nightly (app scheduler) + every N≈20 closed trades; (6) `weight_updates`
+  ledger table for auditability. Keep relearn OFF the per-bar hot path (Victor cares
+  about execution speed). Open call: per-asset weights vs one shared set.
+- Build it with the **brainstorming → writing-plans → subagent-driven-development**
+  flow (spec already discussed; write it to `docs/superpowers/specs/`).
+
+### Running the platform (currently launched in this session; servers stop when it ends)
+`./start.ps1` from repo root → backend on `127.0.0.1:8000` (docs `/docs`), frontend on
+`http://localhost:5173`. Both verified working this session.
+
 ---
 
 ## Opening prompt (paste into the next session)
 
 > Continue the **Consensus** trading bot. Read `HANDOFF.md` at the repo root
-> first — it has full context. Project: `C:\Users\Victor\echotrader` (repo
-> github.com/Victorchatter/consensus). Phase 1 (backtest + data-loader fix) is
-> done and pushed; 60 tests pass via
-> `cd backend && ./venv/Scripts/python.exe -m pytest tests/ -q`.
+> first — full context, esp. §11 (latest session). Project: `C:\Users\Victor\echotrader`
+> (repo github.com/Victorchatter/consensus, branch `main`). Phases 1 & 2 (backtest,
+> data-loader, paper trading + kill-switch) are DONE and pushed; **76 tests pass** via
+> `cd backend && ./venv/Scripts/python.exe -m pytest tests/ -q`. Real data is ingested
+> and the real backtest shows **no robust edge** (`docs/consensus-real-backtest-report.md`).
 >
-> I want to start **Phase 2: paper trading**. Wire `ConsensusStrategy` into
-> EchoTrader's paper engine + bot loop, log per-trade vote breakdowns to the DB,
-> and add the execution-layer kill-switch / max-daily-loss / position cap
-> (enforced independent of the strategy). Keep the hard constraints (Python 3.14,
-> no compiled ML libs, SQLite, live OFF by default). Brainstorm the design with
-> me before building, then use subagents + a verify loop like last time.
+> Build the **self-learning adaptive-reweighting loop** specced in §11: make voter
+> weights relearn live from realized trade outcomes (pure-Python, nightly + every-N-trades),
+> behind a mandatory out-of-sample acceptance gate so it can't overfit. Start by fixing
+> the trade↔signal linkage (entry `ConsensusSignal` id + real entry_time on each Trade).
+> Keep the hard constraints (Python 3.14, no compiled ML libs, SQLite, live OFF by
+> default). Brainstorm → writing-plans → subagents + verify loop, like last time.
