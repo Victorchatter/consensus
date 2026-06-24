@@ -83,14 +83,14 @@ class YahooFinanceFeeder(DataFeeder):
             ticker = yf.Ticker(symbol)
             df = ticker.history(start=effective_start, end=end, interval=yf_tf, auto_adjust=True)
             if df.empty:
-                print(f"[YahooFinance] No data returned for {symbol} ({timeframe}) {effective_start} → {end}")
+                print(f"[YahooFinance] No data returned for {symbol} ({timeframe}) {effective_start} ->{end}")
                 return []
             bars: List[OHLCVBar] = []
             for ts, row in df.iterrows():
                 # ts is a pandas Timestamp; .to_pydatetime() works without explicit pandas import
                 ts_py = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else dt.datetime.fromisoformat(str(ts))
                 vol = row["Volume"]
-                # NaN-safe check: NaN != NaN, None is not None → safe
+                # NaN-safe check: NaN != NaN, None is not None ->safe
                 volume = float(vol) if vol is not None and vol == vol else None
                 bars.append(
                     OHLCVBar(
@@ -105,7 +105,7 @@ class YahooFinanceFeeder(DataFeeder):
             # If user requested 4h, downsample 1h bars by taking every 4th bar
             if timeframe == "4h" and len(bars) >= 4:
                 bars = bars[::4]
-            print(f"[YahooFinance] Fetched {len(bars)} bars for {symbol} ({timeframe}) {effective_start} → {end}")
+            print(f"[YahooFinance] Fetched {len(bars)} bars for {symbol} ({timeframe}) {effective_start} ->{end}")
             return bars
         except Exception as e:
             print(f"[YahooFinance] Error fetching {symbol}: {e}")
@@ -260,7 +260,7 @@ class CCXTFeeder(DataFeeder):
             bars = parse_ohlcv(all_rows)
             print(
                 f"[CCXT:{self.exchange_id}] Fetched {len(bars)} bars for {symbol} "
-                f"({timeframe}) {start} → {end}"
+                f"({timeframe}) {start} ->{end}"
             )
             return bars
         except Exception as e:
