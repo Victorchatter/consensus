@@ -35,3 +35,14 @@ def test_log_consensus_signal_writes_row():
         assert len(rows) >= 1 and rows[-1].score == 0.7
     finally:
         db.close()
+
+
+def test_daily_pnl_rebaselines_each_utc_day():
+    import datetime as dt
+    b = _bot()
+    d1a = dt.datetime(2026, 1, 1, 10, 0)
+    d1b = dt.datetime(2026, 1, 1, 15, 0)
+    d2 = dt.datetime(2026, 1, 2, 9, 0)
+    assert b._daily_pnl(100_000, d1a) == 0.0       # first call today -> baseline set
+    assert b._daily_pnl(98_000, d1b) == -2000.0    # down 2k same day
+    assert b._daily_pnl(98_000, d2) == 0.0         # new UTC day -> re-baseline, no carry-over

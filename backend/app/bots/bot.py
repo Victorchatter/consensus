@@ -54,6 +54,10 @@ class TradingBot:
             max_daily_loss_pct=self.config.risk_max_daily_loss_pct / 100.0,
             max_position_pct=self.config.risk_max_position_size_pct / 100.0,
         )
+        # Daily-loss baseline: equity snapshot at the start of the current UTC
+        # day, so the guard sees today's drawdown, not cumulative PnL.
+        self._daily_baseline_equity: Optional[float] = None
+        self._daily_baseline_date: Optional[dt.date] = None
 
     def _log_consensus_signal(self, session: Session, asset_id: int, signal):
         md = signal.metadata or {}
@@ -90,6 +94,16 @@ class TradingBot:
                 is_paper=True,
             ))
             session.commit()
+
+    def _daily_pnl(self, equity: float, now: dt.datetime) -> float:
+        """Equity change since the first observation of the current UTC day.
+        Re-baselines on day rollover so the guard enforces a DAILY loss limit."""
+        today = now.date()
+        if self._daily_baseline_date != today:
+            self._daily_baseline_date = today
+            self._daily_baseline_equity = equity
+        base = self._daily_baseline_equity if self._daily_baseline_equity is not None else equity
+        return equity - base
 
     def _init_connector(self) -> ExchangeConnector:
         """Create the appropriate exchange connector for this bot's mode."""
@@ -218,8 +232,7 @@ class TradingBot:
                                     is_reducing=is_reducing,
                                     intended_value=size * signal.price,
                                     equity=equity,
-                                    daily_pnl=self._connector.get_summary().get("realized_pnl", 0.0)
-                                        if hasattr(self._connector, "get_summary") else 0.0,
+                                    daily_pnl=self._daily_pnl(equity, dt.datetime.utcnow()),
                                     now=dt.datetime.utcnow(),
                                 )
                                 if not ok:
