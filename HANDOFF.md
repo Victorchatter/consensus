@@ -19,13 +19,28 @@ default behind a typed confirmation.
 event-driven `BacktestEngine`, paper engine, risk guards, CCXT, and
 lightweight-charts — NOT a fresh standalone project. SQLite, not Postgres.
 
-## 2. Current state — Phase 1 (Backtest) DONE
+## 2. Current state — Phase 1 (Backtest) + Phase 2 (Paper) DONE
 
-- **60 tests pass.** Run: `cd C:\Users\Victor\echotrader\backend && ./venv/Scripts/python.exe -m pytest tests/ -q`
+- **75 tests pass.** Run: `cd C:\Users\Victor\echotrader\backend && ./venv/Scripts/python.exe -m pytest tests/ -q`
 - The recurring **data-loading bug is root-caused and fixed** (see §4).
 - Consensus engine built and verified end-to-end on synthetic data.
 - Phase-1 report written: `docs/consensus-phase1-report.md` (honest "NO EDGE"
   verdicts — it's **synthetic data**, see §6).
+- **Phase 2 paper trading DONE** (branch `phase2-paper-trading`). Spec/plan in
+  `docs/superpowers/{specs,plans}/2026-06-23-consensus-paper-trading*`. Delivered:
+  - `DefaultConsensusStrategy` (zero-arg) drops into the bot via class_path loader.
+  - `RiskGuard` (`app/execution/guard.py`): strategy-independent kill-switch —
+    latches on daily-loss breach, auto-resets at UTC day rollover, blocks opens /
+    allows closes, rejects oversized opens. Consulted before every order in the loop.
+  - Daily-loss uses an equity baseline snapshotted once per UTC day (independent of
+    signal firing), not cumulative PnL.
+  - Persistence: `ConsensusSignal` audit table (one row per fired signal) +
+    closed `Trade` rows via a paper-engine `on_close` sink.
+  - Runnable: `./venv/Scripts/python.exe -m scripts.run_consensus_paper`
+    (BTC/USDT 5m paper, source=binance, 24/7, live OFF).
+  - Known Phase-3 follow-ups: closed `Trade.entry_time == exit_time` (engine
+    on_close carries no entry time); no async e2e test of the latched-blocks-order
+    branch (guard itself is fully unit-tested).
 
 ## 3. Hard constraints (do NOT violate)
 
@@ -104,22 +119,24 @@ python -m app.consensus.ingest --symbol GLD --timeframe 5m --start 2023-01-01 --
   config flag true + exact phrase `"I ENABLE LIVE TRADING"` + paper-minimum
   (14d) met. ✅ (gate exists; the execution loop that CALLS it is Phase 3.)
 - `max_position_pct`, `max_daily_loss_pct`, `kelly_fraction` are config
-  constants. ⚠️ Execution-layer enforcement (kill-switch independent of the
-  strategy) is **Phase 3 work**.
+  constants. ✅ **Execution-layer enforcement done in Phase 2** — `RiskGuard`
+  (`app/execution/guard.py`) is consulted by the bot before every order,
+  independent of the strategy.
 
-## 8. What's next (Phase 2, in priority order)
+## 8. What's next (Phase 3, in priority order)
 
-1. **Paper-trading loop** — wire `ConsensusStrategy` to EchoTrader's paper engine
-   (`app/execution/paper.py`) + bot loop (`app/bots/`). Run continuously against
-   real-time bars; log each fired trade's vote breakdown (`Signal.metadata`) to
-   the DB for audit. Must run ≥14 days before live is even reachable.
-2. **Execution-layer kill-switch / max-daily-loss / position cap** — enforced at
-   the order layer, independent of strategy, so a strategy bug can't bypass them.
-3. **Frontend consensus-meter** — live long/short/flat meter across the ~14
-   voters, equity/drawdown charts, trade log with full vote reasoning, prominent
-   phase indicator showing LIVE = OFF. Stack: React/Vite + lightweight-charts
-   (already in the frontend).
-4. **Compare paper vs backtest** — large divergence blocks progression to live.
+1. ✅ **Paper-trading loop** — DONE (Phase 2). See §2.
+2. ✅ **Execution-layer kill-switch / max-daily-loss / position cap** — DONE (Phase 2).
+3. **Run the 14-day paper soak** — actually run `scripts.run_consensus_paper` on a
+   networked machine ≥14 days; inspect `consensus_signals` + closed `trades` tables.
+   This is a gate, not code: live is unreachable until it completes.
+4. **Frontend consensus-meter** — live long/short/flat meter across the ~14
+   voters, equity/drawdown charts, trade log with full vote reasoning (join
+   `consensus_signals` to `trades` on asset+timestamp), prominent phase indicator
+   showing LIVE = OFF. Stack: React/Vite + lightweight-charts (already in frontend).
+5. **Compare paper vs backtest** — large divergence blocks progression to live.
+   Needs real per-trade `entry_time` (currently `== exit_time`; add an entry
+   timestamp to the paper engine `on_close` payload first).
 
 **Deferred:** ML voters (CatBoost/XGBoost) — needs a separate Python 3.12 venv
 or verified 3.14 wheels; the spec itself says ML may add no edge, so prove the
